@@ -18,7 +18,7 @@ from mutagen.mp3 import MP3
 os.makedirs("downloads", exist_ok=True)
 os.makedirs("finished", exist_ok=True)
 
-class YouTubeSplitterApp(ctk.CTk):
+class regisMakin(ctk.CTk):
     def __init__(self):
         super().__init__()
 
@@ -37,7 +37,7 @@ class YouTubeSplitterApp(ctk.CTk):
         self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.top_frame.pack(fill="x", padx=20, pady=(20, 5))
 
-        self.url_entry = ctk.CTkEntry(self.top_frame, placeholder_text="link de video youtube o ruta de audio local", 
+        self.url_entry = ctk.CTkEntry(self.top_frame, placeholder_text="Ingrese enlace youtube aqui", 
                                       fg_color="white", text_color="black", height=35)
         self.url_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
 
@@ -50,7 +50,7 @@ class YouTubeSplitterApp(ctk.CTk):
         self.check_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.check_frame.pack(fill="x", padx=20, pady=(0, 15))
         
-        self.btn_check = ctk.CTkButton(self.check_frame, text="check", fg_color="#b8e922", 
+        self.btn_check = ctk.CTkButton(self.check_frame, text="Check", fg_color="#b8e922", 
                                        text_color="black", hover_color="#9acd1c", 
                                        command=self.procesar_check_thread)
         self.btn_check.pack(side="left")
@@ -114,9 +114,23 @@ class YouTubeSplitterApp(ctk.CTk):
         self.col_right = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         self.col_right.grid(row=0, column=2, sticky="nsew", padx=(10, 0))
 
-        self.txt_timestamps = ctk.CTkTextbox(self.col_right, fg_color="white", text_color="black", font=("Arial", 14))
+        self.txt_timestamps = ctk.CTkTextbox(self.col_right, fg_color="white", text_color="gray", font=("Arial", 14))
         self.txt_timestamps.pack(fill="both", expand=True)
-        self.txt_timestamps.insert("0.0", "0:00 SACÚDETE\n4:02 AMIGOS\n8:26 BB")
+        self.txt_timestamps.insert("0.0", "Ingresa las timestamps aqui...")
+
+        # Truco para que el texto gris desaparezca al hacer clic y vuelva si lo dejas vacío
+        def focus_in_txt(event):
+            if self.txt_timestamps.get("1.0", "end-1c") == "Ingresa las timestamps aqui...":
+                self.txt_timestamps.delete("1.0", "end")
+                self.txt_timestamps.configure(text_color="black")
+
+        def focus_out_txt(event):
+            if not self.txt_timestamps.get("1.0", "end-1c").strip():
+                self.txt_timestamps.configure(text_color="gray")
+                self.txt_timestamps.insert("0.0", "Ingresa las timestamps aqui...")
+
+        self.txt_timestamps.bind("<FocusIn>", focus_in_txt)
+        self.txt_timestamps.bind("<FocusOut>", focus_out_txt)
 
         # ==========================================
         # BARRA INFERIOR (PROGRESO)
@@ -427,5 +441,5 @@ class YouTubeSplitterApp(ctk.CTk):
 
 
 if __name__ == "__main__":
-    app = YouTubeSplitterApp()
+    app = regisMakin()
     app.mainloop()

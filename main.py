@@ -1,0 +1,344 @@
+import os
+import re
+import io
+import urllib.request
+import threading
+import yt_dlp
+import customtkinter as ctk
+import tkinter as tk
+from tkinter import messagebox, filedialog
+from PIL import Image, ImageTk
+
+# 1. Crear las carpetas de trabajo
+os.makedirs("downloads", exist_ok=True)
+os.makedirs("finished", exist_ok=True)
+
+class YouTubeSplitterApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+
+        self.title("YouTube Audio Splitter")
+        self.geometry("950x650")
+        self.configure(fg_color="#312c40")
+
+        self.tracks_data = []
+        self.duracion_actual = float('inf') # Infinito por defecto para audios locales o lives
+
+        # --- TOP BAR: LINK Y AUDIO LOCAL ---
+        self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.top_frame.pack(fill="x", padx=20, pady=(20, 5))
+
+        self.url_entry = ctk.CTkEntry(self.top_frame, placeholder_text="link de video youtube o ruta de audio local", 
+                                      fg_color="white", text_color="black", height=35)
+        self.url_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        self.btn_local_audio = ctk.CTkButton(self.top_frame, text="📁", width=40, height=35, 
+                                             fg_color="#e0e0e0", text_color="black", hover_color="#c0c0c0",
+                                             command=self.abrir_audio_local)
+        self.btn_local_audio.pack(side="right")
+
+        # --- BOTÓN CHECK ---
+        self.check_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.check_frame.pack(fill="x", padx=20, pady=(0, 15))
+        
+        self.btn_check = ctk.CTkButton(self.check_frame, text="check", fg_color="#b8e922", 
+                                       text_color="black", hover_color="#9acd1c", 
+                                       command=self.procesar_check_thread)
+        self.btn_check.pack(side="left")
+
+        # --- GRID PRINCIPAL (3 COLUMNAS) ---
+        self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
+        self.main_frame.pack(fill="both", expand=True, padx=20, pady=5)
+        self.main_frame.grid_columnconfigure(0, weight=1)
+        self.main_frame.grid_columnconfigure(1, weight=2)
+        self.main_frame.grid_columnconfigure(2, weight=2)
+
+        # ==========================================
+        # COLUMNA 1: ALBUM COVER E INFO
+        # ==========================================
+        self.col_left = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.col_left.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+
+        self.cover_canvas = tk.Canvas(self.col_left, width=200, height=200, bg="white", highlightthickness=0)
+        self.cover_canvas.pack(pady=(0, 10))
+        self.cover_canvas.create_text(100, 100, text="album\ncover", font=("Arial", 16), justify="center")
+        
+        self.cover_canvas.bind("<ButtonPress-1>", lambda e: self.cover_canvas.scan_mark(e.x, e.y))
+        self.cover_canvas.bind("<B1-Motion>", lambda e: self.cover_canvas.scan_dragto(e.x, e.y, gain=1))
+
+        self.btn_local_cover = ctk.CTkButton(self.col_left, text="📁", width=40, fg_color="#e0e0e0", 
+                                             text_color="black", command=self.abrir_cover_local)
+        self.btn_local_cover.pack(pady=(0, 15))
+
+        ctk.CTkLabel(self.col_left, text="Album:", text_color="white", font=("Arial", 12, "bold")).pack(anchor="w")
+        self.entry_album = ctk.CTkEntry(self.col_left, fg_color="white", text_color="black")
+        self.entry_album.pack(fill="x", pady=(0, 10))
+
+        ctk.CTkLabel(self.col_left, text="Artista:", text_color="white", font=("Arial", 12, "bold")).pack(anchor="w")
+        self.entry_artist = ctk.CTkEntry(self.col_left, fg_color="white", text_color="black")
+        self.entry_artist.pack(fill="x", pady=(0, 10))
+
+        ctk.CTkLabel(self.col_left, text="Año:", text_color="white", font=("Arial", 12, "bold")).pack(anchor="w")
+        self.entry_year = ctk.CTkEntry(self.col_left, fg_color="white", text_color="black")
+        self.entry_year.pack(fill="x", pady=(0, 10))
+
+        # ==========================================
+        # COLUMNA 2: LISTA DE CANCIONES Y BOTÓN CONVERTIR
+        # ==========================================
+        self.col_mid = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.col_mid.grid(row=0, column=1, sticky="nsew", padx=10)
+
+        self.track_list_frame = ctk.CTkScrollableFrame(self.col_mid, fg_color="white")
+        self.track_list_frame.pack(fill="both", expand=True, pady=(0, 15))
+
+        self.btn_convertir = ctk.CTkButton(self.col_mid, text="CONVERTIR", fg_color="#e5b4c4", 
+                                           text_color="#c83040", font=("Arial", 20, "bold"), height=50,
+                                           border_width=3, border_color="#c83040", hover_color="#f0c0d0",
+                                           command=self.iniciar_conversion)
+        self.btn_convertir.pack(fill="x")
+
+        # ==========================================
+        # COLUMNA 3: CAJA DE TIMESTAMPS
+        # ==========================================
+        self.col_right = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.col_right.grid(row=0, column=2, sticky="nsew", padx=(10, 0))
+
+        self.txt_timestamps = ctk.CTkTextbox(self.col_right, fg_color="white", text_color="black", font=("Arial", 14))
+        self.txt_timestamps.pack(fill="both", expand=True)
+        self.txt_timestamps.insert("0.0", "0:00 SACÚDETE\n4:02 AMIGOS\n8:26 BB\n12:20 HIMNO DEL LOCO")
+
+        # ==========================================
+        # BARRA INFERIOR (ESTADO Y PROGRESO)
+        # ==========================================
+        self.bottom_frame = ctk.CTkFrame(self, fg_color="transparent", height=40)
+        self.bottom_frame.pack(fill="x", side="bottom", padx=20, pady=10)
+
+        self.lbl_status = ctk.CTkLabel(self.bottom_frame, text="", text_color="white", width=120, anchor="w")
+        self.lbl_status.pack(side="left")
+
+        self.progress_bar = ctk.CTkProgressBar(self.bottom_frame, mode="determinate", fg_color="#555555", progress_color="#b8e922")
+        self.progress_bar.pack(side="left", fill="x", expand=True, padx=10)
+        self.progress_bar.set(0)
+
+        self.lbl_success = ctk.CTkLabel(self.bottom_frame, text="", text_color="#b8e922", width=120, anchor="e", font=("Arial", 12, "bold"))
+        self.lbl_success.pack(side="right")
+
+        # --- INICIALIZACIÓN ---
+        self.bloquear_ui()
+
+    # --- FUNCIONES DE EXPLORADOR DE ARCHIVOS ---
+    def abrir_audio_local(self):
+        ruta = filedialog.askopenfilename(title="Seleccionar Audio", 
+                                          filetypes=[("Archivos de audio", "*.mp3 *.wav *.m4a *.flac")])
+        if ruta:
+            self.url_entry.delete(0, "end")
+            self.url_entry.insert(0, ruta)
+
+    def abrir_cover_local(self):
+        ruta = filedialog.askopenfilename(title="Seleccionar Carátula", 
+                                          filetypes=[("Imágenes", "*.jpg *.jpeg *.png")])
+        if ruta:
+            img = Image.open(ruta)
+            self.poner_imagen_en_canvas(img)
+
+    def poner_imagen_en_canvas(self, img):
+        """Redimensiona y coloca una imagen de Pillow en el Canvas"""
+        img_resized = img.resize((200, 200), Image.Resampling.LANCZOS)
+        self.tk_cover = ImageTk.PhotoImage(img_resized)
+        self.cover_canvas.delete("all")
+        self.cover_canvas.create_image(100, 100, image=self.tk_cover)
+        self.cover_original = img # Guardamos la original para cuando cortemos a 1000x1000
+
+    # --- BLOQUEO / DESBLOQUEO ---
+    def bloquear_ui(self):
+        self.entry_album.configure(state="disabled")
+        self.entry_artist.configure(state="disabled")
+        self.entry_year.configure(state="disabled")
+        self.btn_local_cover.configure(state="disabled")
+        self.btn_convertir.configure(state="disabled")
+
+    def desbloquear_ui(self):
+        self.entry_album.configure(state="normal")
+        self.entry_artist.configure(state="normal")
+        self.entry_year.configure(state="normal")
+        self.btn_local_cover.configure(state="normal")
+        self.btn_convertir.configure(state="normal")
+
+    def time_to_seconds(self, time_str):
+        partes = time_str.split(':')
+        if len(partes) == 2:
+            return int(partes[0]) * 60 + int(partes[1])
+        elif len(partes) == 3:
+            return int(partes[0]) * 3600 + int(partes[1]) * 60 + int(partes[2])
+        return -1
+
+    # --- LÓGICA DEL CHECK (HILO SEPARADO PARA NO CONGELAR) ---
+    def procesar_check_thread(self):
+        self.btn_check.configure(state="disabled")
+        self.lbl_status.configure(text="Validando...")
+        threading.Thread(target=self.procesar_check, daemon=True).start()
+
+    def procesar_check(self):
+        url = self.url_entry.get().strip()
+        timestamps_raw = self.txt_timestamps.get("1.0", "end-1c").strip()
+
+        if not url or not timestamps_raw:
+            self.after(0, lambda: messagebox.showerror("Error", "Falta enlace o timestamps."))
+            self.after(0, self.restaurar_check)
+            return
+
+        # Si es un enlace de YouTube, extraemos info y carátula
+        if url.startswith("http"):
+            try:
+                ydl_opts = {'quiet': True, 'noplaylist': True}
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    self.duracion_actual = info.get('duration') or float('inf') # Infinito si es un Live Stream
+                    
+                    # Cargar miniatura temporal
+                    thumb_url = info.get('thumbnail')
+                    if thumb_url:
+                        raw_data = urllib.request.urlopen(thumb_url).read()
+                        img = Image.open(io.BytesIO(raw_data))
+                        self.after(0, self.poner_imagen_en_canvas, img)
+
+            except Exception as e:
+                self.after(0, lambda: messagebox.showerror("Error", "Enlace inválido o video privado."))
+                self.after(0, self.restaurar_check)
+                return
+        else:
+            # Es un archivo local, asumimos infinito y validamos solo orden de tiempo
+            self.duracion_actual = float('inf') 
+
+        # Validar tiempos
+        lineas = timestamps_raw.split("\n")
+        parsed_tracks = []
+        ultimo_tiempo = -1
+
+        for linea in lineas:
+            linea = linea.strip()
+            if not linea: continue
+
+            match = re.match(r'^(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+)', linea)
+            if not match:
+                self.after(0, lambda l=linea: messagebox.showerror("Formato", f"Error de formato en: '{l}'"))
+                self.after(0, self.restaurar_check)
+                return
+            
+            time_str, track_name = match.groups()
+            time_sec = self.time_to_seconds(time_str)
+
+            if time_sec > self.duracion_actual:
+                self.after(0, lambda t=time_str: messagebox.showerror("Tiempo", f"'{t}' supera la duración del video."))
+                self.after(0, self.restaurar_check)
+                return
+            
+            if time_sec <= ultimo_tiempo:
+                self.after(0, lambda t=time_str: messagebox.showerror("Orden", f"Tiempos desordenados en: '{t}'"))
+                self.after(0, self.restaurar_check)
+                return
+
+            ultimo_tiempo = time_sec
+            parsed_tracks.append((time_str, track_name))
+        
+        # Actualizar UI
+        self.after(0, self.dibujar_pistas, parsed_tracks)
+        self.after(0, self.restaurar_check)
+        self.after(0, self.desbloquear_ui)
+        self.after(0, self.lbl_status.configure, {"text": "Listo para convertir."})
+
+    def dibujar_pistas(self, pistas):
+        for widget in self.track_list_frame.winfo_children():
+            widget.destroy()
+
+        for i, (t_str, t_name) in enumerate(pistas, start=1):
+            row_frame = ctk.CTkFrame(self.track_list_frame, fg_color="white")
+            row_frame.pack(fill="x", pady=2)
+            
+            ctk.CTkLabel(row_frame, text=f"{i} - ", text_color="black", width=30).pack(side="left")
+            
+            track_entry = ctk.CTkEntry(row_frame, fg_color="white", text_color="black", border_width=0)
+            track_entry.insert(0, t_name)
+            track_entry.pack(side="left", fill="x", expand=True)
+            
+            btn_del = ctk.CTkButton(row_frame, text="X", width=25, fg_color="red", 
+                                    command=lambda r=row_frame: r.destroy())
+            btn_del.pack(side="right", padx=5)
+
+    def restaurar_check(self):
+        self.btn_check.configure(state="normal")
+        if self.lbl_status.cget("text") == "Validando...":
+            self.lbl_status.configure(text="")
+
+    # --- LÓGICA DE DESCARGA / CONVERSIÓN ---
+    def iniciar_conversion(self):
+        self.bloquear_ui()
+        self.btn_check.configure(state="disabled")
+        self.progress_bar.set(0)
+        self.lbl_status.configure(text="Iniciando...")
+        
+        # Lanzamos la descarga en un hilo para no congelar la app
+        threading.Thread(target=self.proceso_conversion_thread, daemon=True).start()
+
+    def proceso_conversion_thread(self):
+        url = self.url_entry.get().strip()
+
+        if url.startswith("http"):
+            # Opciones de descarga (Mejor audio posible sin necesidad estricta de FFmpeg todavía para descargar)
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': 'downloads/%(title)s.%(ext)s',
+                'progress_hooks': [self.hook_progreso_yt],
+                'quiet': True,
+                'noplaylist': True
+            }
+
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([url])
+                
+                self.after(0, self.lbl_status.configure, {"text": "Procesando audio..."})
+                
+                # TODO: Aquí irá pydub para cortar el audio descargado
+                
+                self.after(0, self.mostrar_exito)
+            except Exception as e:
+                self.after(0, lambda err=e: messagebox.showerror("Error de Descarga", f"Fallo al descargar:\n{err}"))
+                self.after(0, self.lbl_status.configure, {"text": "Error."})
+                self.after(0, self.desbloquear_ui)
+                self.after(0, self.btn_check.configure, {"state": "normal"})
+        else:
+            # Es un archivo local
+            self.after(0, self.lbl_status.configure, {"text": "Procesando audio local..."})
+            # TODO: Aquí irá pydub para cortar
+            self.after(0, self.mostrar_exito)
+
+    def hook_progreso_yt(self, d):
+        """Atrapa el porcentaje de yt-dlp y actualiza la barra"""
+        if d['status'] == 'downloading':
+            p_str = d.get('_percent_str', '0%').replace('%','').strip()
+            # Limpiar colores ANSI de consola
+            p_str = re.sub(r'\x1b\[[0-9;]*m', '', p_str)
+            try:
+                val = float(p_str) / 100.0
+                self.after(0, self.progress_bar.set, val)
+                self.after(0, self.lbl_status.configure, {"text": f"Descargando... {p_str}%"})
+            except ValueError:
+                pass
+
+    def mostrar_exito(self):
+        self.lbl_status.configure(text="")
+        self.progress_bar.set(1)
+        self.lbl_success.configure(text="¡Descarga con éxito!")
+        
+        # Desvanecer el texto después de 2.5 segundos
+        self.after(2500, lambda: self.lbl_success.configure(text=""))
+        self.after(2500, lambda: self.progress_bar.set(0))
+        
+        self.desbloquear_ui()
+        self.btn_check.configure(state="normal")
+
+
+if __name__ == "__main__":
+    app = YouTubeSplitterApp()
+    app.mainloop()

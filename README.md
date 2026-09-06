@@ -12,7 +12,7 @@
 ```
 
 
-regisMakin es una aplicación que tiene la utilidad de convertir, esos registros que mas te gustan, en álbumes MP3 con sus temas ordenados y con portada para su uso en aplicaciones de reproducción de musica que utilicen archivos locales. Esta aplicación fue creada a partir de la librería  de interfaz gráfica tkinter de Python, junto a otras mas para poder realizar el procesado de audio de la descarga, como el recorte y ordenamiento de los audios.
+regisMake es una aplicación que tiene la utilidad de convertir, esos registros que mas te gustan, en álbumes MP3 con sus temas ordenados y con portada para su uso en aplicaciones de reproducción de musica que utilicen archivos locales. Esta aplicación fue creada a partir de la librería  de interfaz gráfica tkinter de Python, junto a otras mas para poder realizar el procesado de audio de la descarga, como el recorte y ordenamiento de los audios.
 
 ***
 ## **Uso de aplicación:**
@@ -31,8 +31,8 @@ Asegúrate de tener instalado Python 3.10+ y Git en tu sistema antes de comenzar
 Abre tu terminal o PowerShell y descarga el código fuente:
 
 ```bash
-git clone https://github.com/cruvksqio/regisMakin.git
-cd regisMakin
+git clone https://github.com/cruvksqio/regisMake.git
+cd regisMake
 ```
 # 2. Crear y activar el Entorno Virtual (venv)
 
